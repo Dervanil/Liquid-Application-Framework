@@ -4,6 +4,7 @@ using Liquid.Messaging.Exceptions;
 using Liquid.Messaging.Extensions;
 using Liquid.Messaging.Interfaces;
 using Liquid.Messaging.RabbitMq.Settings;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System;
@@ -26,12 +27,11 @@ namespace Liquid.Messaging.RabbitMq
         private readonly IRabbitMqFactory _factory;
         private readonly RabbitMqConsumerSettings _settings;
 
+        ///<inheritdoc/>
+        public event Func<ConsumerMessageEventArgs<TEntity>, CancellationToken, Task> ConsumeMessageAsync;
 
         ///<inheritdoc/>
-        public event Func<ProcessMessageEventArgs<TEntity>, CancellationToken, Task> ProcessMessageAsync;
-
-        ///<inheritdoc/>
-        public event Func<ProcessErrorEventArgs, Task> ProcessErrorAsync;
+        public event Func<ConsumerErrorEventArgs, Task> ProcessErrorAsync;
 
         /// <summary>
         /// Initilize an instance of <see cref="RabbitMqConsumer{TEntity}"/>
@@ -49,9 +49,9 @@ namespace Liquid.Messaging.RabbitMq
         ///<inheritdoc/>
         public void RegisterMessageHandler()
         {
-            if (ProcessMessageAsync is null)
+            if (ConsumeMessageAsync is null)
             {
-                throw new NotImplementedException($"The {nameof(ProcessErrorAsync)} action must be added to class.");
+                throw new NotImplementedException($"The {nameof(ConsumeMessageAsync)} action must be added to class.");
             }
 
             _channelModel = _factory.GetReceiver(_settings);
@@ -72,23 +72,23 @@ namespace Liquid.Messaging.RabbitMq
         {
             try
             {
-                await ProcessMessageAsync(GetEventArgs(deliverEvent), cancellationToken);
+                await ConsumeMessageAsync(GetEventArgs(deliverEvent), cancellationToken);
 
                 if (!_autoAck)
                 {
                     _channelModel.BasicAck(deliverEvent.DeliveryTag, false);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 if (!_autoAck)
+                {
                     _channelModel.BasicNack(deliverEvent.DeliveryTag, false, true);
-
-                throw new MessagingConsumerException(ex);
+                }
             }
         }
 
-        private ProcessMessageEventArgs<TEntity> GetEventArgs(BasicDeliverEventArgs deliverEvent)
+        private ConsumerMessageEventArgs<TEntity> GetEventArgs(BasicDeliverEventArgs deliverEvent)
         {
             var data = deliverEvent.BasicProperties?.ContentType == CommonExtensions.GZipContentType
                    ? deliverEvent.Body.ToArray().GzipDecompress().ParseJson<TEntity>()
@@ -96,7 +96,7 @@ namespace Liquid.Messaging.RabbitMq
 
             var headers = deliverEvent.BasicProperties?.Headers;
 
-            return new ProcessMessageEventArgs<TEntity> { Data = data, Headers = headers };
+            return new ConsumerMessageEventArgs<TEntity> { Data = data, Headers = headers };
         }
     }
 }

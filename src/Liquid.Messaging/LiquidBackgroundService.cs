@@ -1,6 +1,7 @@
 ﻿using Liquid.Messaging.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,14 +38,10 @@ namespace Liquid.Messaging
         /// is called.</param>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _consumer.ProcessMessageAsync += ProcessMessageAsync;
-
+            _consumer.ConsumeMessageAsync += ProcessMessageAsync;
             _consumer.RegisterMessageHandler();
 
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await Task.Delay(1000, stoppingToken);
-            }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -54,12 +51,11 @@ namespace Liquid.Messaging
         /// </summary>
         /// <param name="args"></param>
         /// <param name="cancellationToken"></param>
-        public async Task ProcessMessageAsync(ProcessMessageEventArgs<TEntity> args, CancellationToken cancellationToken)
+        public async Task ProcessMessageAsync(ConsumerMessageEventArgs<TEntity> args, CancellationToken cancellationToken)
         {
             using (IServiceScope scope = _serviceProvider.CreateScope())
             {
                 var worker = scope.ServiceProvider.GetRequiredService<ILiquidWorker<TEntity>>();
-
                 await worker.ProcessMessageAsync(args, cancellationToken);
             }
         }
